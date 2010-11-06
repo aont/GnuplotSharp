@@ -12,51 +12,59 @@ namespace Aont
         public Gnuplot(string Path, bool Start)
         {
             this.GnuplotProcess = new Process();
-            var StartInfo = this.GnuplotProcess.StartInfo;
-            StartInfo.FileName = Path;
-            StartInfo.Arguments = "-persist";
-            StartInfo.RedirectStandardInput =
-                StartInfo.RedirectStandardError =
-                StartInfo.RedirectStandardOutput =
-                    true;
-            StartInfo.UseShellExecute = false;
-
-            if (Start) this.Start();
+            this.GnuplotProcess.StartInfo = new ProcessStartInfo()
+            {
+                FileName = Path,
+                Arguments = "-persist",
+                RedirectStandardInput = true,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+            };
+            if (Start)
+                this.Start();
         }
         public Gnuplot(string Path) : this(Path, true) { }
 
-
         StreamWriter Input;
         StreamReader Output;
-        //StreamReader Error;
         public void Start()
         {
             this.GnuplotProcess.Start();
             this.Input = this.GnuplotProcess.StandardInput;
             this.Output = this.GnuplotProcess.StandardOutput;
-            //this.Error = this.GnuplotProcess.StandardError;
             this.GnuplotProcess.ErrorDataReceived += new DataReceivedEventHandler(GnuplotProcess_ErrorDataReceived);
             this.ErrorData = new List<string>();
             this.GnuplotProcess.BeginErrorReadLine();
-
         }
 
         List<string> ErrorData;
-        void GnuplotProcess_ErrorDataReceived(object sender, DataReceivedEventArgs e) { ErrorData.Add(e.Data); }
-        bool ThrowErrorException = false;
-
-        public void WriteLineNoWait(string format, params object[] args) { this.Input.WriteLine(format, args); }
-
-        public string WriteLine(string format, params object[] args)
+        void GnuplotProcess_ErrorDataReceived(object sender, DataReceivedEventArgs e)
         {
-            return this.WriteLine(true, format, args);
+            ErrorData.Add(e.Data);
         }
-        public string WriteLine(bool WaitResponse, string format, params object[] args)
+
+        public void WriteLine(string format, params object[] args)
+        {
+            this.Input.WriteLine(format, args);
+        }
+        public void WriteLine(string format)
+        {
+            this.Input.WriteLine(format);
+        }
+        public void WriteLine(object obj)
+        {
+            this.Input.WriteLine(obj.ToString());
+        }
+        public void WriteLine()
+        {
+            this.Input.WriteLine();
+        }
+
+        public bool ThrowErrorException { get; set; }
+        public string ReadError()
         {
             bool ErrorFlag = false;
-            WriteLineNoWait(format, args);
-            if (!WaitResponse)
-                return null;
 
             StringBuilder ErrorMessage = new StringBuilder();
             while (true)
@@ -65,20 +73,18 @@ namespace Aont
                     continue;
                 else
                 {
-                    var mes = ErrorData[0]; ErrorData.RemoveAt(0);
-                    if (mes == null)
-                        continue;
-                    //Error.ReadLine();
-                    //Console.WriteLine(mes);
-                    if (mes.EndsWith("gnuplot> ")) { break; }
+                    var mes = ErrorData[0];
+                    ErrorData.RemoveAt(0);
+
+                    if (mes.EndsWith("gnuplot> "))
+                        break;
                     else
                     {
                         ErrorMessage.Append(mes);
                         ErrorMessage.Append('\n');
                         if (!ErrorFlag)
                         {
-                            if (//!mes.StartsWith("input data ('e' ends) >") && 
-                                !mes.StartsWith("gnuplot> "))
+                            if (!mes.StartsWith("gnuplot> "))
                                 ErrorFlag = true;
                         }
                     }
@@ -86,12 +92,14 @@ namespace Aont
             }
             if (ErrorFlag)
             {
-                var ErrorMessageString = ErrorMessage.ToString();
                 if (ThrowErrorException)
-                    throw new Exception(ErrorMessageString);
-                return ErrorMessageString;
+                    throw new GnuplotException(ErrorMessage.ToString());
+                return ErrorMessage.ToString();
             }
-            else { return null; }
+            else
+            {
+                return null;
+            }
         }
 
         public void Dispose()
@@ -102,8 +110,16 @@ namespace Aont
                 this.Input.WriteLine("quit");
                 this.Input.Dispose();
                 this.Output.Dispose();
-                //this.Error.Dispose();
+                this.GnuplotProcess.CancelErrorRead();
             }
         }
+        ~Gnuplot()
+        {
+            this.Dispose();
+        }
+    }
+    public class GnuplotException : Exception
+    {
+        public GnuplotException(string mes) : base(mes) { }
     }
 }
